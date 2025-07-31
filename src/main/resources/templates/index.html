@@ -1,0 +1,43 @@
+<!-- src/main/resources/templates/index.html -->
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Framework - Home</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <h1>🚀 Welcome to Your Vinit Framework!</h1>
+        <p>Fast startup • Hot reload • Full stack ready</p>
+    </div>
+
+    <div class="content">
+        <h2>Framework Features:</h2>
+        <ul class="feature-list">
+            <li>✅ Dependency Injection</li>
+            <li>✅ REST APIs</li>
+            <li>✅ Hot Reload</li>
+            <li>✅ Thymeleaf Templates</li>
+            <li>✅ Static File Serving</li>
+        </ul>
+
+        <h2>Message from Service:</h2>
+        <p th:text="${message}">Default message</p>
+
+        <h2>Current Time:</h2>
+        <p th:text="${currentTime}">Time not available</p>
+        <p data-live-time>JavaScript time will appear here</p>
+
+        <br>
+        <a href="/users" class="api-link">View Users Page</a>
+        <a href="/api/users" class="api-link">API: Get Users</a>
+        <a href="/api/hello" class="api-link">API: Hello</a>
+    </div>
+</div>
+
+<script src="/js/app.js"></script>
+</body>
+</html>
