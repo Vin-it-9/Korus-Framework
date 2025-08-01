@@ -35,12 +35,9 @@ public class SpringBootStyleProxyFactory {
                     .setCallback(0, new TransactionalMethodInterceptor(target, transactionManager));
 
             copyFields(target, proxyInstance);
-
-            System.out.println("✅ Created Spring Boot-style proxy for: " + targetClass.getSimpleName());
             return proxyInstance;
 
         } catch (Exception e) {
-            System.err.println("❌ Failed to create Spring Boot-style proxy for " + targetClass.getSimpleName() + ": " + e.getMessage());
             return target;
         }
     }
@@ -55,12 +52,9 @@ public class SpringBootStyleProxyFactory {
             Object proxyInstance = enhancer.create(getConstructorArgTypes(constructorArgs), constructorArgs);
 
             copyFields(target, proxyInstance);
-
-            System.out.println("✅ Created Spring Boot-style proxy with constructor args for: " + targetClass.getSimpleName());
             return proxyInstance;
 
         } catch (Exception e2) {
-            System.err.println("❌ Failed to create Spring Boot-style proxy for " + targetClass.getSimpleName() + ": " + originalException.getMessage());
             return target;
         }
     }

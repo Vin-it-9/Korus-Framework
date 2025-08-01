@@ -25,13 +25,11 @@ public class DevModeManager {
 
     public void startWatching() {
         if (!sourceDirectory.toFile().exists()) {
-            System.out.println("⚠️ Source directory not found: " + sourceDirectory + ". Hot reload disabled.");
+            System.out.println("Source directory not found: " + sourceDirectory + ". Hot reload disabled.");
             return;
         }
 
         try {
-            System.out.println("🔥 Starting hot reload watcher on: " + sourceDirectory.toAbsolutePath());
-
             watcher = DirectoryWatcher.builder()
                     .path(sourceDirectory)
                     .listener(this::handleFileChange)
@@ -44,8 +42,6 @@ public class DevModeManager {
                     System.err.println("Error in file watcher: " + e.getMessage());
                 }
             });
-
-            System.out.println("🔥 Hot reload is active - modify your Java files and see changes instantly!");
 
         } catch (Exception e) {
             System.err.println("Failed to start file watcher: " + e.getMessage());
@@ -62,8 +58,8 @@ public class DevModeManager {
             return;
         }
 
-        System.out.println("\n🔄 File changed: " + changedFile.getFileName());
-        System.out.println("🔄 Event type: " + event.eventType());
+        System.out.println("\nFile changed: " + changedFile.getFileName());
+        System.out.println("Event type: " + event.eventType());
 
         try {
             Thread.sleep(100);
@@ -77,28 +73,26 @@ public class DevModeManager {
 
     private void reloadApplication() {
         try {
-            System.out.println("🔄 Reloading application...");
+            System.out.println("Reloading application...");
 
             boolean compiled = compileChangedFiles();
             if (!compiled) {
-                System.err.println("❌ Compilation failed - keeping current version");
+                System.err.println("Compilation failed - keeping current version");
                 return;
             }
 
             context.start();
-
-            System.out.println("✅ Hot reload completed successfully!");
-            System.out.println("🔥 Your changes are now live at http://localhost:8080\n");
+            int port = 8080;
+            System.out.println("Web server started on http://localhost:" + port);
 
         } catch (Exception e) {
-            System.err.println("❌ Hot reload failed: " + e.getMessage());
+            System.err.println("Hot reload failed: " + e.getMessage());
             e.printStackTrace();
         }
     }
 
     private boolean compileChangedFiles() {
 
-        System.out.println("🔨 Assuming files are compiled by IDE...");
         try {
             Thread.sleep(500);
         } catch (InterruptedException e) {
@@ -113,7 +107,6 @@ public class DevModeManager {
         if (watcher != null) {
             try {
                 watcher.close();
-                System.out.println("🔥 Hot reload watcher stopped");
             } catch (Exception e) {
                 System.err.println("Error stopping watcher: " + e.getMessage());
             }

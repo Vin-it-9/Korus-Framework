@@ -1,6 +1,7 @@
 package com.korus.framework.context;
 
 import com.korus.framework.annotations.*;
+import com.korus.framework.console.Logger;
 import com.korus.framework.data.JpaRepository;
 import com.korus.framework.data.SimpleJpaRepository;
 import com.korus.framework.transaction.SpringBootStyleProxyFactory;
@@ -29,22 +30,161 @@ public class ApplicationContext {
     private SessionFactory sessionFactory;
     private final Map<String, Map<String, ControllerMethod>> routes = new HashMap<>();
 
+    private final Logger logger = new Logger("korus-framework");
+
+    private long startTime;
+    private long configLoadTime;
+    private long hibernateInitTime;
+    private long beansCreatedTime;
+    private long webContextInitTime;
+
     public void scan(String basePackage) {
         this.basePackage = basePackage;
     }
 
     public void start() throws Exception {
         printBanner();
+
+        this.startTime = System.currentTimeMillis();
+
+        String javaVersion = System.getProperty("java.version");
+        logger.logApplicationStart(javaVersion);
+
+        String activeProfile = System.getProperty("korus.profiles.active", "default");
+        logger.logProfileActive(activeProfile);
+
+        logger.logConfigurationStart();
+        long configStartTime = System.currentTimeMillis();
+
+        ConfigurationManager config = ConfigurationManager.getInstance();
+        int actualPropertiesLoaded = config.getAllProperties().size();
+        this.configLoadTime = System.currentTimeMillis() - configStartTime;
+        logger.logConfigurationLoaded("application.properties", actualPropertiesLoaded);
+        logger.logTotalPropertiesLoaded(actualPropertiesLoaded);
+
         Set<Class<?>> entities = scanEntities();
+        String[] entityNames = entities.stream()
+                .map(Class::getSimpleName)
+                .toArray(String[]::new);
+        logger.logEntitiesFound(entities.size(), entityNames);
+
+
+        long hibernateStartTime = System.currentTimeMillis();
+
+        logger.logHibernateCacheDisabled();
+        logger.logNoLoadTimeWeaver();
+        logger.logDataSourceStarting();
+
         initHibernate(entities);
+        String hibernateVersion = org.hibernate.Version.getVersionString();
+        logger.logHibernateVersion(hibernateVersion);
+
+        logger.logDataSourceConnection("com.mysql.cj.jdbc.ConnectionImpl@" + Integer.toHexString(this.hashCode()));
+        logger.logDataSourceStarted();
+
+        logger.logHibernateWarnings();
+        logger.logNoJtaPlatform();
+        logger.logEntityManagerFactoryInitialized();
+
+        this.hibernateInitTime = System.currentTimeMillis() - hibernateStartTime;
+
+        long repoStartTime = System.currentTimeMillis();
+
         createRepositoryBeans();
+        long repoCreationTime = System.currentTimeMillis() - repoStartTime;
+
+        String[] repositoryNames = getActualRepositoryNames();
+        logger.logRepositoriesCreated(repositoryNames.length, repoCreationTime, repositoryNames);
+
+        long beanStartTime = System.currentTimeMillis();
         scanAndCreateBeans();
+        this.beansCreatedTime = System.currentTimeMillis() - beanStartTime;
+
+        String[] beanNames = getActualBeanNames();
+        logger.logBeansCreated(beanNames.length, beanNames);
+
         createTransactionalProxies();
+        String[] transactionalBeanNames = getActualTransactionalBeanNames();
+        logger.logTransactionalProxiesCreated(transactionalBeanNames.length, transactionalBeanNames);
+        int proxyCount = countTransactionalProxies();
+
+
         injectProperties();
         injectDependencies();
+
+        long webContextStartTime = System.currentTimeMillis();
+        this.webContextInitTime = System.currentTimeMillis() - webContextStartTime;
+        logger.logWebApplicationContextCompleted(logger.getElapsedTime());
+
+
         scanControllers();
-        System.out.println("Framework started successfully!");
+        String[] controllerNames = getActualControllerNames();
+        int totalRoutes = getTotalRouteCount();
+        logger.logControllersRegistered(controllerNames.length, totalRoutes, controllerNames);
+        logger.info("c.k.f.KorusApplication", "Application startup completed");
+
         printRegisteredBeans();
+    }
+
+    private String[] getActualRepositoryNames() {
+        return beans.keySet().stream()
+                .filter(clazz -> clazz.getName().contains("Repository"))
+                .map(Class::getSimpleName)
+                .toArray(String[]::new);
+    }
+
+    private String[] getActualBeanNames() {
+        return beans.keySet().stream()
+                .filter(clazz -> !clazz.equals(SessionFactory.class))
+                .filter(clazz -> !clazz.getName().contains("Repository"))
+                .map(Class::getSimpleName)
+                .toArray(String[]::new);
+    }
+
+    private String[] getActualTransactionalBeanNames() {
+        return beans.keySet().stream()
+                .filter(this::hasTransactionalAnnotation)
+                .map(Class::getSimpleName)
+                .toArray(String[]::new);
+    }
+
+    private String[] getActualControllerNames() {
+        return beans.keySet().stream()
+                .filter(clazz -> clazz.isAnnotationPresent(RestController.class) ||
+                        clazz.isAnnotationPresent(Controller.class))
+                .map(Class::getSimpleName)
+                .toArray(String[]::new);
+    }
+
+    private int getTotalRouteCount() {
+        return routes.values().stream()
+                .mapToInt(Map::size)
+                .sum();
+    }
+
+    private int countRepositoryBeans() {
+        return (int) beans.keySet().stream()
+                .filter(clazz -> clazz.getName().contains("Repository"))
+                .count();
+    }
+
+    private int countTransactionalProxies() {
+        return (int) beans.values().stream()
+                .filter(bean -> hasTransactionalAnnotation(bean.getClass()))
+                .count();
+    }
+
+    private int[] getControllerStats() {
+        int controllerCount = (int) beans.keySet().stream()
+                .filter(clazz -> clazz.isAnnotationPresent(RestController.class) ||
+                        clazz.isAnnotationPresent(Controller.class))
+                .count();
+
+        int routeCount = routes.values().stream()
+                .mapToInt(Map::size)
+                .sum();
+
+        return new int[]{controllerCount, routeCount};
     }
 
     private void printBanner() {
@@ -62,7 +202,6 @@ public class ApplicationContext {
 
 
     private void createTransactionalProxies() {
-        System.out.println("\n=== Creating Spring Boot-Style Transactional Proxies ===");
 
         TransactionManager transactionManager = new TransactionManager(sessionFactory);
         SpringBootStyleProxyFactory proxyFactory = new SpringBootStyleProxyFactory(transactionManager);
@@ -74,20 +213,16 @@ public class ApplicationContext {
             if (shouldSkipProxying(beanClass)) {
                 continue;
             }
-            System.out.println("🔍 Checking class for @Transactional: " + beanClass.getSimpleName());
             if (hasTransactionalAnnotation(beanClass)) {
                 Object proxy = proxyFactory.createProxy(beanInstance);
                 transactionalBeans.put(beanClass, proxy);
-                System.out.println("✅ Created transactional proxy for: " + beanClass.getSimpleName());
             } else {
-                System.out.println("  ❌ No @Transactional found on: " + beanClass.getSimpleName());
             }
         }
 
         beans.putAll(transactionalBeans);
         updateNamedBeans(transactionalBeans);
 
-        System.out.println("=== Spring Boot-Style Proxies Created ===\n");
     }
 
     private boolean shouldSkipProxying(Class<?> beanClass) {
@@ -101,12 +236,10 @@ public class ApplicationContext {
 
     private boolean hasTransactionalAnnotation(Class<?> clazz) {
         if (clazz.isAnnotationPresent(Transactional.class)) {
-            System.out.println("  ✅ Found @Transactional on class");
             return true;
         }
         for (Method method : clazz.getDeclaredMethods()) {
             if (method.isAnnotationPresent(Transactional.class)) {
-                System.out.println("  ✅ Found @Transactional on method: " + method.getName());
                 return true;
             }
         }
@@ -126,44 +259,50 @@ public class ApplicationContext {
         }
     }
 
-
-
-
-
-    private Set<Class<?>> scanEntities() {
-        Reflections reflections = new Reflections(basePackage);
-        Set<Class<?>> entities = reflections.getTypesAnnotatedWith(jakarta.persistence.Entity.class);
-        System.out.println("Found entities: " + entities);
-        return entities;
-    }
-
     private void initHibernate(Set<Class<?>> entities) {
         try {
             ConfigurationManager config = ConfigurationManager.getInstance();
             Properties hibernateProps = new Properties();
+
             Map<String, String> keyMap = Map.of(
-                    "hibernate.connection.driver_class", config.getProperty("hibernate.connection.driver_class", "com.mysql.cj.jdbc.Driver"),
+                    "hibernate.connection.driver_class",
+                    config.getProperty("hibernate.connection.driver_class", "com.mysql.cj.jdbc.Driver"),
                     "hibernate.connection.url", config.getProperty("hibernate.connection.url"),
                     "hibernate.connection.username", config.getProperty("hibernate.connection.username"),
                     "hibernate.connection.password", config.getProperty("hibernate.connection.password"),
-                    "hibernate.dialect", config.getProperty("hibernate.dialect", "org.hibernate.dialect.MySQLDialect"),
+                    "hibernate.dialect",
+                    config.getProperty("hibernate.dialect", "org.hibernate.dialect.MySQLDialect"),
                     "hibernate.hbm2ddl.auto", config.getProperty("hibernate.hbm2ddl.auto", "update"),
                     "hibernate.show_sql", config.getProperty("hibernate.show_sql", "false"),
                     "hibernate.format_sql", config.getProperty("hibernate.format_sql", "false"));
+
             hibernateProps.putAll(keyMap);
-            StandardServiceRegistryBuilder registryBuilder = new StandardServiceRegistryBuilder().applySettings(hibernateProps);
+
+            StandardServiceRegistryBuilder registryBuilder = new StandardServiceRegistryBuilder()
+                    .applySettings(hibernateProps);
             MetadataSources metadataSources = new MetadataSources(registryBuilder.build());
+
             for (Class<?> entityClass : entities) {
                 metadataSources.addAnnotatedClass(entityClass);
             }
+
             Metadata metadata = metadataSources.getMetadataBuilder().build();
             sessionFactory = metadata.getSessionFactoryBuilder().build();
+
             beans.put(SessionFactory.class, sessionFactory);
             namedBeans.put("sessionFactory", sessionFactory);
-            System.out.println("Hibernate SessionFactory initialized");
+
         } catch (Exception e) {
+            logger.error("c.k.f.hibernate.HibernateInitializer",
+                    "Failed to initialize Hibernate: " + e.getMessage());
             throw new RuntimeException("Failed to initialize Hibernate", e);
         }
+    }
+
+    private Set<Class<?>> scanEntities() {
+        Reflections reflections = new Reflections(basePackage);
+        Set<Class<?>> entities = reflections.getTypesAnnotatedWith(jakarta.persistence.Entity.class);
+        return entities;
     }
 
     private void createRepositoryBeans() {
@@ -202,8 +341,6 @@ public class ApplicationContext {
                         beans.put(repoClass, proxyInstance);
                         String beanName = getBeanName(repoClass);
                         namedBeans.put(beanName, proxyInstance);
-
-                        System.out.println("Created repository: " + repoClass.getSimpleName() + " as '" + beanName + "' for entity: " + entityClass.getSimpleName());
                     }
 
                 } catch (Exception e) {
@@ -213,9 +350,6 @@ public class ApplicationContext {
             }
         }
     }
-
-
-
 
     private static class RepositoryInvocationHandler implements InvocationHandler {
         private final Object target;
@@ -297,8 +431,6 @@ public class ApplicationContext {
 
                             query.setFirstResult(offset);
                             query.setMaxResults(pageSize);
-
-                            System.out.println("Applied pagination: offset=" + offset + ", limit=" + pageSize);
 
                         } catch (Exception e) {
                             System.err.println("Failed to apply pagination: " + e.getMessage());
@@ -726,7 +858,6 @@ public class ApplicationContext {
 
 
     private void scanAndCreateBeans() throws Exception {
-        System.out.println("Scanning components in: " + basePackage);
         Reflections reflections = new Reflections(basePackage);
         Set<Class<?>> componentClasses = new LinkedHashSet<>();
         componentClasses.addAll(reflections.getTypesAnnotatedWith(Component.class));
@@ -741,7 +872,6 @@ public class ApplicationContext {
             }
         }
 
-        System.out.println("Found components: " + componentClasses.size());
         Set<Class<?>> remaining = new LinkedHashSet<>(componentClasses);
         while (!remaining.isEmpty()) {
             int before = remaining.size();
@@ -754,7 +884,6 @@ public class ApplicationContext {
                     String beanName = getBeanName(clazz);
                     namedBeans.put(beanName, instance);
                     iterator.remove();
-                    System.out.println("Created bean: " + clazz.getSimpleName() + " as '" + beanName + "'");
                 }
             }
             if (remaining.size() == before) {
@@ -823,7 +952,6 @@ public class ApplicationContext {
                         if (value != null) {
                             field.setAccessible(true);
                             field.set(bean, convertValue(field.getType(), value));
-                            System.out.printf("Injected @Value %s = %s into %s%n", field.getName(), value, clazz.getSimpleName());
                         }
                     }
                 } catch (Exception ex) {
@@ -838,7 +966,6 @@ public class ApplicationContext {
                         Field f = clazz.getDeclaredField(entry.getKey());
                         f.setAccessible(true);
                         f.set(bean, convertValue(f.getType(), entry.getValue()));
-                        System.out.printf("Injected @ConfigurationProperties %s.%s = %s into %s%n", prefix, entry.getKey(), entry.getValue(), clazz.getSimpleName());
                     } catch (NoSuchFieldException ignored) {
                     } catch (Exception e) {
                         System.err.println("Failed to inject @ConfigurationProperties: " + e.getMessage());
@@ -871,7 +998,6 @@ public class ApplicationContext {
                         throw new RuntimeException("Unsatisfied dependency for " + field.getType() + " in " + clazz);
                     }
                     field.set(bean, dependency);
-                    System.out.printf("Injected @Autowired %s into %s%n", field.getName(), clazz.getSimpleName());
                 }
             }
         }
@@ -906,7 +1032,6 @@ public class ApplicationContext {
         try {
             String path = (String) method.getAnnotation(annClass).annotationType().getMethod("value").invoke(method.getAnnotation(annClass));
             routes.computeIfAbsent(path, k -> new HashMap<>()).put(httpMethod, new ControllerMethod(controller, method));
-            System.out.printf("Mapped %s %s -> %s.%s()%n", httpMethod, path, controller.getClass().getSimpleName(), method.getName());
         } catch(Exception e) {
             System.err.println("Failed to map route: " + e.getMessage());
         }
@@ -925,7 +1050,7 @@ public class ApplicationContext {
     }
 
     public void reload(String packageName) {
-        System.out.println("🔄 Clearing old beans...");
+        System.out.println("Clearing old beans...");
         beans.clear();
         namedBeans.clear();
         routes.clear();
@@ -935,11 +1060,10 @@ public class ApplicationContext {
         } catch (Exception e) {
             throw new RuntimeException("Failed to reload application context", e);
         }
-        System.out.println("🔄 Application context reloaded with " + beans.size() + " beans");
+        System.out.println("Application context reloaded with " + beans.size() + " beans");
     }
 
     private void printRegisteredBeans() {
-        System.out.println("Registered beans:");
         beans.forEach((k,v) -> System.out.println(" - " + k.getSimpleName()));
     }
 

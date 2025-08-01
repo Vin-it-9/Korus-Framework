@@ -1,4 +1,3 @@
-// src/main/java/com/vinit/framework/web/StaticResourceHandler.java
 package com.korus.framework.web;
 
 import io.undertow.server.HttpHandler;
@@ -23,7 +22,6 @@ public class StaticResourceHandler implements HttpHandler {
     public void handleRequest(HttpServerExchange exchange) throws Exception {
         String path = exchange.getRequestPath();
         String resourcePath = resourcePrefix + path;
-        System.out.println("🗂️ Looking for static resource: " + resourcePath);
         InputStream inputStream = getClass().getClassLoader().getResourceAsStream(resourcePath);
 
         if (inputStream != null) {
@@ -33,7 +31,6 @@ public class StaticResourceHandler implements HttpHandler {
                 addCachingHeaders(exchange, path);
                 byte[] content = inputStream.readAllBytes();
                 exchange.getResponseSender().send(ByteBuffer.wrap(content));
-                System.out.println("✅ Served static file: " + path + " (" + content.length + " bytes, " + contentType + ")");
             } finally {
                 inputStream.close();
             }
@@ -41,7 +38,6 @@ public class StaticResourceHandler implements HttpHandler {
             exchange.setStatusCode(404);
             exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "text/plain");
             exchange.getResponseSender().send("Static resource not found: " + path);
-            System.out.println("❌ Static resource not found: " + resourcePath);
         }
     }
 

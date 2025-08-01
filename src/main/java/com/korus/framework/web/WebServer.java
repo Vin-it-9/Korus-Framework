@@ -24,13 +24,12 @@ public class WebServer {
                 .build();
 
         server.start();
-        System.out.println("🚀 Web server started on http://localhost:" + port);
+        System.out.println("Web server started on http://localhost:" + port);
     }
 
     public void stop() {
         if (server != null) {
             server.stop();
-            System.out.println("Web server stopped");
         }
     }
 }

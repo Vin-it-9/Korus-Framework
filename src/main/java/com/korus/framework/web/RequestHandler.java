@@ -28,7 +28,6 @@ public class RequestHandler implements HttpHandler {
     public void handleRequest(HttpServerExchange exchange) throws Exception {
         String path = exchange.getRequestPath();
         String method = exchange.getRequestMethod().toString();
-        System.out.println("🌐 Received request: " + method + " " + path);
         if (isStaticResource(path)) {
             StaticResourceHandler staticHandler = new StaticResourceHandler("static");
             staticHandler.handleRequest(exchange);
@@ -103,10 +102,7 @@ public class RequestHandler implements HttpHandler {
             }
             handleResponse(exchange, result, model, httpMethod);
 
-            System.out.println("✅ Successfully handled " + httpMethod + " " + exchange.getRequestPath());
-
         } catch (Exception e) {
-            System.err.println("❌ Error handling request: " + e.getMessage());
             e.printStackTrace();
             sendError(exchange, 500, "Internal Server Error: " + e.getMessage());
         }
@@ -128,13 +124,9 @@ public class RequestHandler implements HttpHandler {
     private void renderTemplate(HttpServerExchange exchange, String templateName, Model model) throws Exception {
         Context context = new Context();
         context.setVariables(model.getAttributes());
-
         String html = ThymeleafConfig.getTemplateEngine().process(templateName, context);
-
         exchange.getResponseHeaders().put(Headers.CONTENT_TYPE, "text/html; charset=UTF-8");
         exchange.getResponseSender().send(html);
-
-        System.out.println("🎨 Rendered template: " + templateName);
     }
 
     private void handleRedirect(HttpServerExchange exchange, String redirectUrl) throws Exception {
@@ -142,7 +134,6 @@ public class RequestHandler implements HttpHandler {
         exchange.setStatusCode(302);
         exchange.getResponseHeaders().put(HttpString.tryFromString("Location"), url);
         exchange.getResponseSender().send("");
-        System.out.println("🔄 Redirected to: " + url);
     }
 
     private void sendJsonResponse(HttpServerExchange exchange, Object result) throws Exception {
@@ -160,7 +151,6 @@ public class RequestHandler implements HttpHandler {
 
             if (param.getType() == Model.class) {
                 args[i] = model;
-                System.out.println("📝 Injected Model parameter");
             } else if (param.isAnnotationPresent(RequestBody.class)) {
                 args[i] = resolveRequestBodyParameter(exchange, param, httpMethod);
             } else {
@@ -174,14 +164,11 @@ public class RequestHandler implements HttpHandler {
     private Object resolveRequestBodyParameter(HttpServerExchange exchange, Parameter param, String httpMethod) throws Exception {
         if ("POST".equals(httpMethod) || "PUT".equals(httpMethod) || "DELETE".equals(httpMethod)) {
             String requestBody = readRequestBody(exchange);
-            System.out.println("📦 Raw request body: " + requestBody);
 
             if (requestBody != null && !requestBody.trim().isEmpty()) {
                 Object result = objectMapper.readValue(requestBody, param.getType());
-                System.out.println("📦 Parsed request body for parameter: " + param.getType().getSimpleName());
                 return result;
             } else {
-                System.out.println("⚠️ Empty request body, setting parameter to null");
                 return null;
             }
         }
@@ -200,9 +187,7 @@ public class RequestHandler implements HttpHandler {
         while ((bytesRead = exchange.getInputStream().read(buffer)) != -1) {
             body.append(new String(buffer, 0, bytesRead, StandardCharsets.UTF_8));
         }
-
         String result = body.toString();
-        System.out.println("📖 Read request body (" + result.length() + " chars): " + result);
         return result;
     }
 
@@ -213,7 +198,7 @@ public class RequestHandler implements HttpHandler {
                 new ErrorResponse("Not Found", message)
         );
         exchange.getResponseSender().send(errorResponse);
-        System.out.println("❌ " + message);
+        System.out.println(message);
     }
 
     private void sendError(HttpServerExchange exchange, int statusCode, String message) throws Exception {

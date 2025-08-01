@@ -17,6 +17,16 @@ public class ConfigurationManager {
         loadProperties();
     }
 
+
+    public int getPropertyCount() {
+        return properties.size();
+    }
+
+    public Map<String, String> getAllProperties() {
+        return new HashMap<>(properties);
+    }
+
+
     public static ConfigurationManager getInstance() {
         if (instance == null) {
             instance = new ConfigurationManager();
@@ -28,19 +38,15 @@ public class ConfigurationManager {
         String profile = System.getProperty("spring.profiles.active");
         if (profile == null) profile = System.getenv("SPRING_PROFILES_ACTIVE");
         if (profile == null) profile = "default";
-        System.out.println("🔧 Active profile: " + profile);
         return profile;
     }
 
     private void loadProperties() {
-        System.out.println("🔧 Loading configuration properties...");
         loadPropertiesFile("application.properties");
         if (!"default".equals(activeProfile)) loadPropertiesFile("application-" + activeProfile + ".properties");
         properties.putAll(System.getenv());
         System.getProperties().forEach((key, value) ->
                 properties.put(key.toString(), value.toString()));
-        System.out.println("🔧 Loaded " + properties.size() + " configuration properties");
-        logImportantProperties();
     }
 
     private void loadPropertiesFile(String fileName) {
@@ -50,7 +56,6 @@ public class ConfigurationManager {
                 Properties props = new Properties();
                 props.load(inputStream);
                 props.forEach((key, value) -> properties.put(key.toString(), value.toString()));
-                System.out.println("✅ Loaded: " + fileName + " (" + props.size() + " properties)");
             } catch (IOException e) {
                 System.err.println("❌ Failed to load: " + fileName + " - " + e.getMessage());
             } finally {
@@ -61,17 +66,10 @@ public class ConfigurationManager {
                 }
             }
         } else {
-            System.out.println("⚠️ Configuration file not found: " + fileName);
+            System.out.println("Configuration file not found: " + fileName);
         }
     }
 
-    private void logImportantProperties() {
-        System.out.println("🔧 Key configuration values:");
-        logProperty("server.port", "8080");
-        logProperty("app.name", "My Framework App");
-        logProperty("logging.level", "INFO");
-        logProperty("database.url", "Not configured");
-    }
 
     private void logProperty(String key, String defaultValue) {
         String value = properties.getOrDefault(key, defaultValue);
@@ -92,7 +90,7 @@ public class ConfigurationManager {
             try {
                 return Integer.parseInt(value);
             } catch (NumberFormatException e) {
-                System.err.println("⚠️ Invalid integer value for " + key + ": " + value);
+                System.err.println("Invalid integer value for " + key + ": " + value);
             }
         }
         return defaultValue;
@@ -141,6 +139,5 @@ public class ConfigurationManager {
     public void reload() {
         properties.clear();
         loadProperties();
-        System.out.println("🔄 Configuration reloaded");
     }
 }
