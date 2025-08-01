@@ -126,6 +126,124 @@ public class ApplicationContext {
         printRegisteredBeans();
     }
 
+    private void addRoutesForController(Class<?> controllerClass) {
+
+        Object controllerInstance = beans.get(controllerClass);
+        if (controllerInstance == null) return;
+
+        String basePath = "";
+
+        if (controllerClass.isAnnotationPresent(RequestMapping.class)) {
+            RequestMapping classMapping = controllerClass.getAnnotation(RequestMapping.class);
+            String[] paths = classMapping.value().length > 0 ? classMapping.value() : classMapping.path();
+            if (paths.length > 0) {
+                basePath = paths[0];
+            }
+        }
+
+        for (Method method : controllerClass.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(RequestMapping.class)) {
+                mapRequestMappingRoute(controllerInstance, method, basePath);
+            }
+
+            mapRoute(controllerInstance, method, GetMapping.class, "GET", basePath);
+            mapRoute(controllerInstance, method, PostMapping.class, "POST", basePath);
+            mapRoute(controllerInstance, method, PutMapping.class, "PUT", basePath);
+            mapRoute(controllerInstance, method, DeleteMapping.class, "DELETE", basePath);
+            mapRoute(controllerInstance, method, PatchMapping.class, "PATCH", basePath);
+        }
+    }
+
+    private void mapRequestMappingRoute(Object controller, Method method, String basePath) {
+        RequestMapping requestMapping = method.getAnnotation(RequestMapping.class);
+
+        String[] paths = requestMapping.value().length > 0 ? requestMapping.value() : requestMapping.path();
+        if (paths.length == 0) {
+            paths = new String[]{""};
+        }
+
+        RequestMethod[] methods = requestMapping.method();
+        if (methods.length == 0) {
+            methods = new RequestMethod[]{RequestMethod.GET};
+        }
+
+        for (String path : paths) {
+            String fullPath = combinePaths(basePath, path);
+
+            for (RequestMethod requestMethod : methods) {
+                String httpMethod = requestMethod.name();
+
+                if (routes.containsKey(fullPath) && routes.get(fullPath).containsKey(httpMethod)) {
+                    ControllerMethod existingMethod = routes.get(fullPath).get(httpMethod);
+                    throw new RuntimeException(String.format(
+                            "DUPLICATE ROUTE: %s %s is mapped to both %s.%s() and %s.%s()",
+                            httpMethod, fullPath,
+                            existingMethod.getController().getClass().getSimpleName(),
+                            existingMethod.getMethod().getName(),
+                            controller.getClass().getSimpleName(),
+                            method.getName()
+                    ));
+                }
+
+                routes.computeIfAbsent(fullPath, k -> new HashMap<>())
+                        .put(httpMethod, new ControllerMethod(controller, method));
+
+            }
+        }
+    }
+
+    private void mapRoute(Object controller, Method method, Class<? extends Annotation> annClass, String httpMethod, String basePath) {
+        if (!method.isAnnotationPresent(annClass)) return;
+
+        try {
+            String path = (String) method.getAnnotation(annClass).annotationType().getMethod("value").invoke(method.getAnnotation(annClass));
+            String fullPath = combinePaths(basePath, path);
+
+            if (routes.containsKey(fullPath) && routes.get(fullPath).containsKey(httpMethod)) {
+                ControllerMethod existingMethod = routes.get(fullPath).get(httpMethod);
+                throw new RuntimeException(String.format(
+                        "DUPLICATE ROUTE: %s %s is mapped to both %s.%s() and %s.%s()",
+                        httpMethod, fullPath,
+                        existingMethod.getController().getClass().getSimpleName(),
+                        existingMethod.getMethod().getName(),
+                        controller.getClass().getSimpleName(),
+                        method.getName()
+                ));
+            }
+
+            routes.computeIfAbsent(fullPath, k -> new HashMap<>()).put(httpMethod, new ControllerMethod(controller, method));
+
+        } catch (Exception e) {
+            if (e instanceof RuntimeException && e.getMessage().contains("DUPLICATE ROUTE")) {
+                try {
+                    throw e;
+                } catch (IllegalAccessException ex) {
+                    throw new RuntimeException(ex);
+                } catch (InvocationTargetException ex) {
+                    throw new RuntimeException(ex);
+                } catch (NoSuchMethodException ex) {
+                    throw new RuntimeException(ex);
+                }
+            }
+            System.err.println("Failed to map route: " + e.getMessage());
+        }
+    }
+
+    private String combinePaths(String basePath, String path) {
+        if (basePath.isEmpty()) return path;
+        if (path.isEmpty()) return basePath;
+
+        String combined = basePath;
+        if (!basePath.endsWith("/") && !path.startsWith("/")) {
+            combined += "/";
+        }
+        combined += path;
+        combined = combined.replaceAll("//+", "/");
+
+        return combined;
+    }
+
+
     private String[] getActualRepositoryNames() {
         return beans.keySet().stream()
                 .filter(clazz -> clazz.getName().contains("Repository"))
@@ -274,7 +392,8 @@ public class ApplicationContext {
                     config.getProperty("hibernate.dialect", "org.hibernate.dialect.MySQLDialect"),
                     "hibernate.hbm2ddl.auto", config.getProperty("hibernate.hbm2ddl.auto", "update"),
                     "hibernate.show_sql", config.getProperty("hibernate.show_sql", "false"),
-                    "hibernate.format_sql", config.getProperty("hibernate.format_sql", "false"));
+                    "hibernate.format_sql", config.getProperty("hibernate.format_sql", "false")
+            );
 
             hibernateProps.putAll(keyMap);
 
@@ -537,6 +656,18 @@ public class ApplicationContext {
         private Object handleCustomQueryMethod(Method method, Object[] args) throws Exception {
             String methodName = method.getName();
 
+            switch (methodName) {
+                case "findAll":
+                    return handleFindAllMethod(method);
+                case "count":
+                    return handleCountMethod(method);
+                case "existsById":
+                    if (args.length > 0) {
+                        return handleExistsByIdMethod(method, args[0]);
+                    }
+                    break;
+            }
+
             if (methodName.startsWith("findBy")) {
                 return handleFindByMethod(method, args);
             }
@@ -563,6 +694,30 @@ public class ApplicationContext {
             throw new UnsupportedOperationException(
                     "Method " + methodName + " is not supported for " + repositoryInterface.getSimpleName()
             );
+        }
+
+        private Object handleFindAllMethod(Method method) {
+            try (Session session = sessionFactory.openSession()) {
+                String hql = "from " + entityClass.getName();
+                org.hibernate.query.Query query = session.createQuery(hql, entityClass);
+                return query.list();
+            }
+        }
+
+        private Object handleCountMethod(Method method) {
+            try (Session session = sessionFactory.openSession()) {
+                String hql = "select count(e) from " + entityClass.getName() + " e";
+                org.hibernate.query.Query<Long> query = session.createQuery(hql, Long.class);
+                Long count = query.uniqueResult();
+                return count != null ? count : 0L;
+            }
+        }
+
+        private Object handleExistsByIdMethod(Method method, Object id) {
+            try (Session session = sessionFactory.openSession()) {
+                Object entity = session.get(entityClass, (java.io.Serializable) id);
+                return entity != null;
+            }
         }
 
         private Object handleFindByMethod(Method method, Object[] args) {
@@ -596,6 +751,8 @@ public class ApplicationContext {
                 return query.list();
             }
         }
+
+
 
         private Object handleFindFirstTopMethod(Method method, Object[] args) {
             String methodName = method.getName();
@@ -1013,17 +1170,6 @@ public class ApplicationContext {
         Set<Class<?>> controllers = reflections.getTypesAnnotatedWith(Controller.class);
         for (Class<?> c : controllers) {
             addRoutesForController(c);
-        }
-    }
-
-    private void addRoutesForController(Class<?> controllerClass) {
-        Object controllerInstance = beans.get(controllerClass);
-        if (controllerInstance == null) return;
-        for (Method method : controllerClass.getDeclaredMethods()) {
-            mapRoute(controllerInstance, method, GetMapping.class, "GET");
-            mapRoute(controllerInstance, method, PostMapping.class, "POST");
-            mapRoute(controllerInstance, method, PutMapping.class, "PUT");
-            mapRoute(controllerInstance, method, DeleteMapping.class, "DELETE");
         }
     }
 

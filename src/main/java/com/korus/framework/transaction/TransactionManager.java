@@ -78,30 +78,23 @@ public class TransactionManager {
             txInfo = new TransactionContext.TransactionInfo(session, transaction, readOnly, timeout);
             TransactionContext.pushTransaction(txInfo);
 
-            System.out.println("🔄 Started new transaction: " + transaction.toString());
-
             Object result = callback.execute();
 
             if (txInfo.isRollbackOnly()) {
                 transaction.rollback();
-                System.out.println("🔄 Transaction rolled back (rollback-only)");
             } else {
                 transaction.commit();
-                System.out.println("✅ Transaction committed successfully");
             }
 
             return result;
 
         } catch (Throwable ex) {
-            System.out.println("❌ Exception in transaction: " + ex.getClass().getSimpleName() + " - " + ex.getMessage());
 
             if (transaction != null && transaction.isActive()) {
                 if (shouldRollback(ex, transactional)) {
                     transaction.rollback();
-                    System.out.println("🔄 Transaction rolled back due to exception");
                 } else {
                     transaction.commit();
-                    System.out.println("✅ Transaction committed despite exception (noRollbackFor rule)");
                 }
             }
             throw ex;
@@ -114,8 +107,6 @@ public class TransactionManager {
         }
     }
 
-
-
     private Object executeWithExistingTransaction(TransactionalCallback callback,
                                                   TransactionContext.TransactionInfo existingTx,
                                                   Transactional transactional) throws Throwable {
@@ -124,7 +115,6 @@ public class TransactionManager {
         } catch (Throwable ex) {
             if (shouldRollback(ex, transactional)) {
                 existingTx.setRollbackOnly();
-                System.out.println("🔄 Marked existing transaction for rollback");
             }
             throw ex;
         }

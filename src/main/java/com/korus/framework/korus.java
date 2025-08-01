@@ -38,7 +38,6 @@ public class korus {
             if (devMode) {
                 logger.info("c.k.f.dev.DevModeManager", "Starting development mode with hot reload");
                 DevModeManager devManager = new DevModeManager(context, server, mainClass.getPackageName());
-                devManager.startWatching();
                 Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                     logger.info("c.k.f.KorusApplication", "Shutting down application...");
                     devManager.stop();

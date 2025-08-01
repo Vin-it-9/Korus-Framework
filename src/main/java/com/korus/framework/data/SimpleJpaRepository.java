@@ -19,27 +19,6 @@ public class SimpleJpaRepository<T, ID> implements JpaRepository<T, ID> {
         this.entityClass = entityClass;
     }
 
-//    @Override
-//    public <S extends T> S save(S entity) {
-//        TransactionContext.TransactionInfo currentTx = TransactionContext.getCurrentTransaction();
-//
-//        if (currentTx != null) {
-//            Session session = currentTx.getSession();
-//            session.saveOrUpdate(entity);
-//            return entity;
-//        } else {
-//            Transaction tx = null;
-//            try (Session session = sessionFactory.openSession()) {
-//                tx = session.beginTransaction();
-//                session.saveOrUpdate(entity);
-//                tx.commit();
-//                return entity;
-//            } catch (Exception e) {
-//                if (tx != null) tx.rollback();
-//                throw e;
-//            }
-//        }
-//    }
 
     @Override
     public <S extends T> S save(S entity) {

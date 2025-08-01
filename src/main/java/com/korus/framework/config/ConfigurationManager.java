@@ -57,7 +57,7 @@ public class ConfigurationManager {
                 props.load(inputStream);
                 props.forEach((key, value) -> properties.put(key.toString(), value.toString()));
             } catch (IOException e) {
-                System.err.println("❌ Failed to load: " + fileName + " - " + e.getMessage());
+                System.err.println("Failed to load: " + fileName + " - " + e.getMessage());
             } finally {
                 try {
                     inputStream.close();
