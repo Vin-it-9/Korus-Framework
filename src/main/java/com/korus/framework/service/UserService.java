@@ -20,6 +20,18 @@ public class UserService {
         this.userRepository = userRepository;
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void testTransactionRollback() {
+        User testUser = new User();
+        testUser.setName("ShouldNotExist");
+        testUser.setEmail("test@rollback.com");
+
+        userRepository.save(testUser);
+        System.out.println("User saved, now throwing exception...");
+
+        throw new RuntimeException("Force rollback");
+    }
+
     @Transactional
     public void transferUserData(Integer fromUserId, Integer toUserId) {
         User fromUser = userRepository.getById(fromUserId);

@@ -1,11 +1,10 @@
 package com.korus.framework.transaction;
 
 import com.korus.framework.annotations.*;
-import org.hibernate.Session;
-import org.hibernate.SessionFactory;
-import org.hibernate.Transaction;
+import org.hibernate.*;
 
 import java.lang.reflect.Method;
+
 
 public class TransactionManager {
     private final SessionFactory sessionFactory;
@@ -71,13 +70,18 @@ public class TransactionManager {
         try {
             transaction = session.beginTransaction();
             applyIsolationLevel(session, transactional.isolation());
+
             if (timeout > 0) {
                 transaction.setTimeout(timeout);
             }
 
             txInfo = new TransactionContext.TransactionInfo(session, transaction, readOnly, timeout);
             TransactionContext.pushTransaction(txInfo);
+
+            System.out.println("🔄 Started new transaction: " + transaction.toString());
+
             Object result = callback.execute();
+
             if (txInfo.isRollbackOnly()) {
                 transaction.rollback();
                 System.out.println("🔄 Transaction rolled back (rollback-only)");
@@ -104,11 +108,13 @@ public class TransactionManager {
 
         } finally {
             TransactionContext.popTransaction();
-            if (session != null) {
+            if (session != null && session.isOpen()) {
                 session.close();
             }
         }
     }
+
+
 
     private Object executeWithExistingTransaction(TransactionalCallback callback,
                                                   TransactionContext.TransactionInfo existingTx,
@@ -125,14 +131,11 @@ public class TransactionManager {
     }
 
     private boolean shouldRollback(Throwable ex, Transactional transactional) {
-        // Check noRollbackFor exceptions first
         for (Class<? extends Throwable> noRollbackException : transactional.noRollbackFor()) {
             if (noRollbackException.isAssignableFrom(ex.getClass())) {
                 return false;
             }
         }
-
-        // Check rollbackFor exceptions
         if (transactional.rollbackFor().length > 0) {
             for (Class<? extends Throwable> rollbackException : transactional.rollbackFor()) {
                 if (rollbackException.isAssignableFrom(ex.getClass())) {
@@ -141,8 +144,6 @@ public class TransactionManager {
             }
             return false;
         }
-
-        // Default behavior: rollback on RuntimeException and Error, not on checked exceptions
         return (ex instanceof RuntimeException) || (ex instanceof Error);
     }
 

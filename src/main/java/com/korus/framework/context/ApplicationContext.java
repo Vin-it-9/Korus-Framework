@@ -3,8 +3,8 @@ package com.korus.framework.context;
 import com.korus.framework.annotations.*;
 import com.korus.framework.data.JpaRepository;
 import com.korus.framework.data.SimpleJpaRepository;
+import com.korus.framework.transaction.SpringBootStyleProxyFactory;
 import com.korus.framework.transaction.TransactionManager;
-import com.korus.framework.transaction.TransactionalInvocationHandler;
 import org.hibernate.*;
 import org.hibernate.boot.*;
 import org.hibernate.boot.registry.StandardServiceRegistryBuilder;
@@ -59,6 +59,74 @@ public class ApplicationContext {
             System.out.println(":: Starting MyCustomJVM Framework ::");
         }
     }
+
+
+    private void createTransactionalProxies() {
+        System.out.println("\n=== Creating Spring Boot-Style Transactional Proxies ===");
+
+        TransactionManager transactionManager = new TransactionManager(sessionFactory);
+        SpringBootStyleProxyFactory proxyFactory = new SpringBootStyleProxyFactory(transactionManager);
+        Map<Class<?>, Object> transactionalBeans = new HashMap<>();
+
+        for (Map.Entry<Class<?>, Object> entry : new HashMap<>(beans).entrySet()) {
+            Class<?> beanClass = entry.getKey();
+            Object beanInstance = entry.getValue();
+            if (shouldSkipProxying(beanClass)) {
+                continue;
+            }
+            System.out.println("🔍 Checking class for @Transactional: " + beanClass.getSimpleName());
+            if (hasTransactionalAnnotation(beanClass)) {
+                Object proxy = proxyFactory.createProxy(beanInstance);
+                transactionalBeans.put(beanClass, proxy);
+                System.out.println("✅ Created transactional proxy for: " + beanClass.getSimpleName());
+            } else {
+                System.out.println("  ❌ No @Transactional found on: " + beanClass.getSimpleName());
+            }
+        }
+
+        beans.putAll(transactionalBeans);
+        updateNamedBeans(transactionalBeans);
+
+        System.out.println("=== Spring Boot-Style Proxies Created ===\n");
+    }
+
+    private boolean shouldSkipProxying(Class<?> beanClass) {
+        return beanClass.equals(SessionFactory.class) ||
+                beanClass.getName().startsWith("com.korus.framework.data") ||
+                beanClass.getName().contains("Repository") ||
+                beanClass.getName().startsWith("java.") ||
+                beanClass.getName().startsWith("javax.") ||
+                beanClass.getName().startsWith("jakarta.");
+    }
+
+    private boolean hasTransactionalAnnotation(Class<?> clazz) {
+        if (clazz.isAnnotationPresent(Transactional.class)) {
+            System.out.println("  ✅ Found @Transactional on class");
+            return true;
+        }
+        for (Method method : clazz.getDeclaredMethods()) {
+            if (method.isAnnotationPresent(Transactional.class)) {
+                System.out.println("  ✅ Found @Transactional on method: " + method.getName());
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private void updateNamedBeans(Map<Class<?>, Object> transactionalBeans) {
+        for (Map.Entry<String, Object> entry : new HashMap<>(namedBeans).entrySet()) {
+            Object bean = entry.getValue();
+            for (Map.Entry<Class<?>, Object> proxyEntry : transactionalBeans.entrySet()) {
+                if (proxyEntry.getKey().isInstance(bean)) {
+                    namedBeans.put(entry.getKey(), proxyEntry.getValue());
+                    break;
+                }
+            }
+        }
+    }
+
+
 
 
 
@@ -145,6 +213,9 @@ public class ApplicationContext {
             }
         }
     }
+
+
+
 
     private static class RepositoryInvocationHandler implements InvocationHandler {
         private final Object target;
@@ -334,7 +405,6 @@ public class ApplicationContext {
         private Object handleCustomQueryMethod(Method method, Object[] args) throws Exception {
             String methodName = method.getName();
 
-            // Handle findBy patterns
             if (methodName.startsWith("findBy")) {
                 return handleFindByMethod(method, args);
             }
@@ -342,22 +412,18 @@ public class ApplicationContext {
                 return handleFindAllByMethod(method, args);
             }
 
-            // Handle findFirst/findTop patterns
             if (methodName.startsWith("findFirst") || methodName.startsWith("findTop")) {
                 return handleFindFirstTopMethod(method, args);
             }
 
-            // Handle countBy patterns
             if (methodName.startsWith("countBy")) {
                 return handleCountByMethod(method, args);
             }
 
-            // Handle existsBy patterns
             if (methodName.startsWith("existsBy")) {
                 return handleExistsByMethod(method, args);
             }
 
-            // Handle deleteBy patterns
             if (methodName.startsWith("deleteBy") || methodName.startsWith("removeBy")) {
                 return handleDeleteByMethod(method, args);
             }
@@ -369,7 +435,7 @@ public class ApplicationContext {
 
         private Object handleFindByMethod(Method method, Object[] args) {
             String methodName = method.getName();
-            String queryPart = methodName.substring(6); // Remove "findBy"
+            String queryPart = methodName.substring(6);
             String hql = buildQueryFromMethodName(queryPart, args, "select");
 
             try (Session session = sessionFactory.openSession()) {
@@ -389,7 +455,7 @@ public class ApplicationContext {
 
         private Object handleFindAllByMethod(Method method, Object[] args) {
             String methodName = method.getName();
-            String queryPart = methodName.substring(9); // Remove "findAllBy"
+            String queryPart = methodName.substring(9);
             String hql = buildQueryFromMethodName(queryPart, args, "select");
 
             try (Session session = sessionFactory.openSession()) {
@@ -405,14 +471,14 @@ public class ApplicationContext {
             int limit = 1;
 
             if (methodName.startsWith("findFirst")) {
-                queryPart = methodName.substring(9); // Remove "findFirst"
+                queryPart = methodName.substring(9);
                 if (queryPart.matches("^\\d+.*")) {
                     String numberPart = queryPart.replaceAll("^(\\d+).*", "$1");
                     limit = Integer.parseInt(numberPart);
                     queryPart = queryPart.substring(numberPart.length());
                 }
-            } else { // findTop
-                queryPart = methodName.substring(7); // Remove "findTop"
+            } else {
+                queryPart = methodName.substring(7);
                 if (queryPart.matches("^\\d+.*")) {
                     String numberPart = queryPart.replaceAll("^(\\d+).*", "$1");
                     limit = Integer.parseInt(numberPart);
@@ -420,7 +486,6 @@ public class ApplicationContext {
                 }
             }
 
-            // Handle OrderBy methods specially
             if (queryPart.startsWith("ByOrderBy") || queryPart.equals("ByOrderByNameAsc") || queryPart.equals("ByOrderByNameDesc")) {
                 return handleOrderByMethod(method, args, limit, queryPart);
             }
@@ -429,9 +494,7 @@ public class ApplicationContext {
                 queryPart = queryPart.substring(2);
             }
 
-            // Only proceed if queryPart is not empty
             if (queryPart.isEmpty()) {
-                // Simple findTop/findFirst without conditions
                 try (Session session = sessionFactory.openSession()) {
                     String hql = "from " + entityClass.getName();
                     org.hibernate.query.Query query = session.createQuery(hql, entityClass);
@@ -475,10 +538,9 @@ public class ApplicationContext {
                 } else if (queryPart.equals("ByOrderByNameDesc") || queryPart.startsWith("ByOrderByNameDesc")) {
                     hql = "from " + entityClass.getName() + " e order by e.name desc";
                 } else if (queryPart.startsWith("ByOrderBy")) {
-                    // Extract property and direction from OrderBy clause
-                    String orderPart = queryPart.substring(9); // Remove "ByOrderBy"
-                    String property = "name"; // default
-                    String direction = "asc"; // default
+                    String orderPart = queryPart.substring(9);
+                    String property = "name";
+                    String direction = "asc";
 
                     if (orderPart.endsWith("Asc")) {
                         property = orderPart.substring(0, orderPart.length() - 3);
@@ -514,7 +576,7 @@ public class ApplicationContext {
 
         private Object handleCountByMethod(Method method, Object[] args) {
             String methodName = method.getName();
-            String queryPart = methodName.substring(7); // Remove "countBy"
+            String queryPart = methodName.substring(7);
             String hql = buildQueryFromMethodName(queryPart, args, "count");
 
             try (Session session = sessionFactory.openSession()) {
@@ -527,7 +589,7 @@ public class ApplicationContext {
 
         private Object handleExistsByMethod(Method method, Object[] args) {
             String methodName = method.getName();
-            String queryPart = methodName.substring(8); // Remove "existsBy"
+            String queryPart = methodName.substring(8);
             String hql = buildQueryFromMethodName(queryPart, args, "count");
 
             try (Session session = sessionFactory.openSession()) {
@@ -544,7 +606,7 @@ public class ApplicationContext {
 
             if (methodName.startsWith("deleteBy")) {
                 queryPart = methodName.substring(8);
-            } else { // removeBy
+            } else {
                 queryPart = methodName.substring(8);
             }
 
@@ -586,7 +648,6 @@ public class ApplicationContext {
                 hql.append("delete from ").append(entityClass.getName()).append(" e where ");
             }
 
-            // Handle complex query parsing
             String[] parts = queryPart.split("And|Or");
             for (int i = 0; i < parts.length; i++) {
                 if (i > 0) {
@@ -788,75 +849,6 @@ public class ApplicationContext {
     }
 
 
-    private void createTransactionalProxies() {
-        System.out.println("\n=== Creating Transactional Proxies ===");
-
-        TransactionManager transactionManager = new TransactionManager(sessionFactory);
-        Map<Class<?>, Object> transactionalBeans = new HashMap<>();
-
-        for (Map.Entry<Class<?>, Object> entry : new HashMap<>(beans).entrySet()) {
-            Class<?> beanClass = entry.getKey();
-            Object beanInstance = entry.getValue();
-
-            if (beanClass.equals(SessionFactory.class) ||
-                    beanClass.getName().startsWith("com.vinit.framework.data")) {
-                continue;
-            }
-
-            boolean hasTransactional = beanClass.isAnnotationPresent(Transactional.class);
-
-            if (!hasTransactional) {
-                for (Method method : beanClass.getDeclaredMethods()) {
-                    if (method.isAnnotationPresent(Transactional.class)) {
-                        hasTransactional = true;
-                        break;
-                    }
-                }
-            }
-
-            if (hasTransactional) {
-                Object proxy = createTransactionalProxy(beanInstance, transactionManager);
-                transactionalBeans.put(beanClass, proxy);
-
-                System.out.println("Created transactional proxy for: " + beanClass.getSimpleName());
-            }
-        }
-
-        beans.putAll(transactionalBeans);
-
-        for (Map.Entry<String, Object> entry : new HashMap<>(namedBeans).entrySet()) {
-            Object bean = entry.getValue();
-            for (Map.Entry<Class<?>, Object> proxyEntry : transactionalBeans.entrySet()) {
-                if (proxyEntry.getKey().isInstance(bean)) {
-                    namedBeans.put(entry.getKey(), proxyEntry.getValue());
-                    break;
-                }
-            }
-        }
-
-        System.out.println("=== Transactional Proxies Created ===\n");
-    }
-
-    private Object createTransactionalProxy(Object target, TransactionManager transactionManager) {
-        Class<?> targetClass = target.getClass();
-        Class<?>[] interfaces = targetClass.getInterfaces();
-
-        if (interfaces.length > 0) {
-            return Proxy.newProxyInstance(
-                    targetClass.getClassLoader(),
-                    interfaces,
-                    new TransactionalInvocationHandler(target, transactionManager)
-            );
-        } else {
-            return createCglibProxy(target, transactionManager);
-        }
-    }
-
-    private Object createCglibProxy(Object target, TransactionManager transactionManager) {
-        System.out.println("Warning: Class " + target.getClass().getSimpleName() +
-                " has no interfaces. Transactional behavior may not work properly.");
-        return target;
-    }
 
 
     private Object convertValue(Class<?> targetType, String value) {

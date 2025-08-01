@@ -1,6 +1,7 @@
 package com.korus.framework;
 
 import com.korus.framework.annotations.Application;
+import com.korus.framework.annotations.Transactional;
 import com.korus.framework.context.ApplicationContext;
 
 import com.korus.framework.service.UserService;
@@ -34,6 +35,14 @@ public class DemoApplication {
             userService.transferUserData(user1.getId(), user2.getId());
         } catch (Exception e) {
             System.out.println("❌ Transfer failed: " + e.getMessage());
+        }
+
+        System.out.println("\n1.1 Rollback test...");
+        try {
+            userService.testTransactionRollback();
+        }
+        catch (Exception e) {
+            System.out.println("❌ Rollback test failed (expected): " + e.getMessage());
         }
 
         System.out.println("\n2. Testing transaction rollback...");
