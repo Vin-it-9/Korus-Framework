@@ -4,7 +4,7 @@ import com.korus.framework.annotations.*;
 import com.korus.framework.console.Logger;
 import com.korus.framework.data.JpaRepository;
 import com.korus.framework.data.SimpleJpaRepository;
-import com.korus.framework.transaction.SpringBootStyleProxyFactory;
+import com.korus.framework.transaction.ProxyFactory;
 import com.korus.framework.transaction.TransactionManager;
 import org.hibernate.*;
 import org.hibernate.boot.*;
@@ -204,7 +204,7 @@ public class ApplicationContext {
     private void createTransactionalProxies() {
 
         TransactionManager transactionManager = new TransactionManager(sessionFactory);
-        SpringBootStyleProxyFactory proxyFactory = new SpringBootStyleProxyFactory(transactionManager);
+        ProxyFactory proxyFactory = new ProxyFactory(transactionManager);
         Map<Class<?>, Object> transactionalBeans = new HashMap<>();
 
         for (Map.Entry<Class<?>, Object> entry : new HashMap<>(beans).entrySet()) {

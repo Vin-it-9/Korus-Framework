@@ -45,24 +45,16 @@ public class SimpleJpaRepository<T, ID> implements JpaRepository<T, ID> {
     public <S extends T> S save(S entity) {
         TransactionContext.TransactionInfo currentTx = TransactionContext.getCurrentTransaction();
 
-        System.out.println("🔍 Repository.save() - Current transaction: " +
-                (currentTx != null ? "EXISTS" : "NULL"));
-
         if (currentTx != null) {
-            // Use existing transaction
             Session session = currentTx.getSession();
-            System.out.println("🔄 Using existing transaction session");
             session.saveOrUpdate(entity);
             return entity;
         } else {
-            // Create new transaction (original behavior)
-            System.out.println("⚠️ No existing transaction - creating new one");
             Transaction tx = null;
             try (Session session = sessionFactory.openSession()) {
                 tx = session.beginTransaction();
                 session.saveOrUpdate(entity);
                 tx.commit();
-                System.out.println("✅ New transaction committed");
                 return entity;
             } catch (Exception e) {
                 if (tx != null) tx.rollback();

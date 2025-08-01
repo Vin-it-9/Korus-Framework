@@ -11,13 +11,13 @@ import com.korus.framework.annotations.Transactional;
 import java.lang.reflect.Method;
 import java.lang.reflect.Field;
 
-public class SpringBootStyleProxyFactory {
+public class ProxyFactory {
 
     private final TransactionManager transactionManager;
     private final Objenesis objenesis = new ObjenesisStd();
 
 
-    public SpringBootStyleProxyFactory(TransactionManager transactionManager) {
+    public ProxyFactory(TransactionManager transactionManager) {
         this.transactionManager = transactionManager;
     }
 

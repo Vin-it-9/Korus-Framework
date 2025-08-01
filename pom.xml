@@ -90,4 +90,8 @@
         </dependency>
 
     </dependencies>
+
+
+
 </project>
+<!-- now lets make the maven perfect that it should run work properly with our framework-->
